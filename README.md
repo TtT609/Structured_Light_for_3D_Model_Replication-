@@ -45,7 +45,6 @@ npm run dev
 * **/backend** - Python logic and API
 * **/frontend** - React/Vite source code
 * **/data** - Sample point clouds or test images
-* **main.py** - Entry point for the application
 
 ## 🤝 How to Contribute
 1. Always git pull before starting work.
