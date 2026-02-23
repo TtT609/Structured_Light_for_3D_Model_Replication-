@@ -1,17 +1,18 @@
-# 🚀 Project Title (e.g., Autonomous Turntable Scanner)
-> A brief 1-sentence description of what this project does.
+# 🚀 Design and Implementation of a Scan-to-Print System using Structured Light for 3D Model Replication
+> Automated 3D object reconstruction via smartphone-based structured light scanning and synchronized turntable rotation.
 
 ## 👥 The Team
-* **Name 1** (@username) - Lead Developer / Computer Vision
-* **Name 2** (@username) - Frontend / UI
-* **Name 3** (@username) - Documentation / Hardware Integration
+* **Theetawat Yamwong** (@TtT609)
+* **Natdanai Tasanakanpaisan**
+* **Apisit Hongthong**
+* **Lanchakorn Okano**
 
 ---
 
 ## 🛠️ Tech Stack
 * **Language:** Python 3.10+
 * **Frontend:** React + Vite (located in `/frontend`)
-* **Libraries:** OpenCV, NumPy, Open3D (if applicable)
+* **Libraries:** OpenCV, NumPy, Open3D
 * **Collaboration:** Git + Discord Webhooks
 
 ## ⚙️ Installation & Setup
