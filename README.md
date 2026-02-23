@@ -23,7 +23,7 @@ git clone [https://github.com/your-username/your-repo-name.git](https://github.c
 cd your-repo-name
 ```
 ### 2. Set up Python Environment
-Bash
+```Bash
 # Create a virtual environment
 python -m venv venv
 
@@ -32,6 +32,7 @@ python -m venv venv
 
 # Install dependencies
 pip install -r requirements.txt
+```
 ###3. Frontend Setup (if applicable)
 ```Bash
 cd frontend
