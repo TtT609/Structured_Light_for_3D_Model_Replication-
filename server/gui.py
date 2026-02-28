@@ -13,59 +13,59 @@ from arduino import ArduinoController
 # GUI (Graphical User Interface)
 # ==========================================
 class ScannerGUI:
-    # คลาสสำหรับสร้างหน้าต่างโปรแกรมผู้ใช้งาน (UI) ด้วย Tkinter
+    # Class for creating the user interface (UI) using Tkinter
     def __init__(self, root):
         self.root = root
-        self.root.title("Project 3D Scanner Suite") # ตั้งชื่อหน้าต่างโปรแกรม
-        self.root.geometry("800x700") # ขนาดเริ่มต้น กว้าง 800 สูง 700 พิเซล
+        self.root.title("Project 3D Scanner Suite") # Set window title
+        self.root.geometry("800x700") # Initial size: 800x700 pixels
         
-        # ผูกยึดสคริปต์การทำงานของแต่ละส่วนเข้ากับตัวแปรในหน้าต่าง GUI นี้
-        self.sys = SLSystem()             # ระบบควบคุมแสงและสแกน
-        self.processor = ProcessingLogic() # ระบบคัดกรองกราฟิก 3D (Open3D)
-        self.arduino = ArduinoController() # ระบบหมุนมอเตอร์ผ่าน Arduino
+        # Bind functional scripts to variables within this GUI window
+        self.sys = SLSystem()             # Light and scan control system
+        self.processor = ProcessingLogic() # 3D graphics filtering (Open3D)
+        self.arduino = ArduinoController() # Motor control via Arduino
         
         # --- State Variables (Scanner) ---
-        # ตัวแปรจำพวก StringVar, IntVar เอาไว้ผูกค่าทิ้งไว้ แล้วดึงลิงก์ไปแสดงบนหน้าจอ ช่องกรอกได้เรื่อยๆตลอดโปรแกรมรัน
+        # StringVar and IntVar used to bind values for real-time display and dynamic updates
         
-        # ตั้งค่าช่องเก็บบันทึกไฟล์ภาพ Calibrate เริ่มต้น
+        # Default save directory for calibration images
         self.calib_capture_dir = tk.StringVar(value=os.path.join(DEFAULT_ROOT, "calib"))
-        # พาธไฟล์ .mat ที่ได้จากการ Calibrate เสร็จแล้ว
+        # Path for the .mat file generated after calibration
         self.calib_file = tk.StringVar(value=os.path.join(DEFAULT_ROOT, "calib", "calib.mat"))
-        # จำนวนท่าทางที่จะบังคับกระดานหมากรุก (เริ่มต้นให้เป็น 5 ท่า)
-        self.num_poses = tk.IntVar(value=5)
+        # Number of checkerboard poses (default to 6)
+        self.num_poses = tk.IntVar(value=6)
         
-        # ชื่อออบเจ็กต์หรือชิ้นงานที่จะนำมาสแกน (ใช้ตั้งเป็นชื่อโฟลเดอร์ตระกูลนี้ด้วย)
+        # Name of the object to be scanned (used as folder name)
         self.scan_name = tk.StringVar(value="object_01")
-        # โฟลเดอร์ปลายทางที่รูปภาพสแกนแต่ละบิตจะกระจัดกระจายหล่นไป
+        # Destination folder for individual scan bit images
         self.scan_capture_dir = tk.StringVar(value=os.path.join(DEFAULT_ROOT, "scans", "object_01"))
         
         # --- State Variables (Combined Processing) ---
-        # เมนูรวมพลสำหรับประมวลผล (Processing)
-        self.proc_input_dir = tk.StringVar()  # โฟลเดอร์ขาเข้า
-        self.proc_output_dir = tk.StringVar() # โฟลเดอร์ปลายทางออก
+        # Unified Processing menu
+        self.proc_input_dir = tk.StringVar()  # Input folder
+        self.proc_output_dir = tk.StringVar() # Output folder
         
-        # BG Params (พารามิเตอร์ลบพื้นหลัง)
-        self.bg_dist_thresh = tk.DoubleVar(value=50.0) # ระยะห่างความลึกขอกำแพง
-        self.bg_ransac_n = tk.IntVar(value=3) # จำนวนพอยต์สุ่ม
-        self.bg_iterations = tk.IntVar(value=1000) # ความพยายามสุ่ม
+        # BG Params (Background Removal Parameters)
+        self.bg_dist_thresh = tk.DoubleVar(value=50.0) # Depth threshold from wall
+        self.bg_ransac_n = tk.IntVar(value=3) # Number of random points
+        self.bg_iterations = tk.IntVar(value=1000) # Randomization attempts
         
-        # Outlier Params (พารามิเตอร์ฝุ่นผง)
-        self.proc_nb_neighbors = tk.IntVar(value=20) # จำนวนเพื่อนข้างเคียง
-        self.proc_std_ratio = tk.DoubleVar(value=2.0) # เปอร์เซ็นต์ความห่าง
+        # Outlier Params (Noise/Dust removal)
+        self.proc_nb_neighbors = tk.IntVar(value=20) # Number of neighbors
+        self.proc_std_ratio = tk.DoubleVar(value=2.0) # Distance ratio percentage
         
-        # 360 Merge Params (พารามิเตอร์เย็บต่อโมเดล 360 องศา)
+        # 360 Merge Params (Stitching models for 360-degree view)
         self.merge_input_dir = tk.StringVar()
         self.merge_output_file = tk.StringVar()
-        self.merge_voxel = tk.DoubleVar(value=0.02) # ความละเอียดขนาดบล็อคหยาบๆ
+        self.merge_voxel = tk.DoubleVar(value=3) # Downsampling grid resolution
         
-        # 360 Meshing Params (พารามิเตอร์ถักทอตาข่าย Mesh รอบตัว)
+        # 360 Meshing Params (Surface meshing)
         self.m360_input_ply = tk.StringVar()
         self.m360_output_stl = tk.StringVar()
-        self.m360_depth = tk.IntVar(value=10) # ความลึกสมการถักตะแกรง
-        self.m360_trim = tk.DoubleVar(value=0.0) # ระดับการตัดเศษที่ลอกร่อน (Default to 0.0=Watertight)
-        self.m360_mode = tk.StringVar(value="radial") # โหมดเล็งทิศทาง Normal (Default to Radial)
+        self.m360_depth = tk.IntVar(value=10) # Mesh grid calculation depth
+        self.m360_trim = tk.DoubleVar(value=0.0) # Trimming level (0.0 = Watertight)
+        self.m360_mode = tk.StringVar(value="radial") # Normal orientation mode (Default: Radial)
 
-        # STL Reconstruction (พารามิเตอร์ปั้น 3D ฝั่งปกติ)
+        # STL Reconstruction (Standard 3D modeling parameters)
         self.s_input_ply = tk.StringVar()
         self.s_output_stl = tk.StringVar()
         self.s_mode = tk.StringVar(value="watertight")
@@ -73,37 +73,41 @@ class ScannerGUI:
         self.s_radii = tk.StringVar(value="1, 2, 4")
 
         # --- State Variables (Turntable) ---
-        # แท่นหมุน
-        self.tt_port = tk.StringVar() # ช่องสำหรับบอกว่าอยู่ COM ไหน
-        self.tt_baud = tk.StringVar(value="115200") # เสาความเร็วเชื่อมต่อ
-        self.tt_degrees = tk.DoubleVar(value=30.0) # จำนวนองศาที่อยากให้หมุนแต่ละรอบ (เช่น 30 องศา)
-        self.tt_turns = tk.IntVar(value=12) # จำนวนที่ต้องถ่าย (12 รอบ x 30 = 360)
+        self.tt_port = tk.StringVar() # COM Port selection
+        self.tt_baud = tk.StringVar(value="115200") # Connection speed
+        self.tt_degrees = tk.DoubleVar(value=30.0)# Degrees per rotation (e.g., 30)
+        self.tt_turns = tk.IntVar(value=12) # Total scans (12 turns x 30 = 360 degrees)
         self.tt_status = tk.StringVar(value="Status: Idle")
         self.tt_base_name = tk.StringVar(value="Object_360")
         self.tt_save_dir = tk.StringVar(value=os.path.join(DEFAULT_ROOT, "scans_360"))
 
-        # --- TABS (ตั้งค่าแท็บแต่ละแผ่นของโปรแกรม) ---
-        self.notebook = ttk.Notebook(root) # สร้างหน้าต่างแฟ้มเมนูแนวนอน
+        # --- TABS (Setting up program tab sheets) ---
+        self.notebook = ttk.Notebook(root) # Create horizontal tab menu
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # คลอดพื้นที่สำหรับแต่ละหน้าแท็บ 6 รายการ
+        # Create frames for each of the 7 tabs
         self.tab_scan = ttk.Frame(self.notebook)
+        self.tab_multiPCP = ttk.Frame(self.notebook)
         self.tab_proc = ttk.Frame(self.notebook)
         self.tab_merge = ttk.Frame(self.notebook)
         self.tab_mesh360 = ttk.Frame(self.notebook) 
         self.tab_turntable = ttk.Frame(self.notebook) 
         self.tab_recon = ttk.Frame(self.notebook)
         
-        # ยัดเฟรมเข้าไปในแฟ้มเมนู ให้มีหัวข้อ 1-6 ให้คลิกเปลี่ยนเรื่อง
-        self.notebook.add(self.tab_scan, text="1. Scan & Generate")
-        self.notebook.add(self.tab_proc, text="2. Cleanup & Process")
-        self.notebook.add(self.tab_merge, text="3. Merge 360")
-        self.notebook.add(self.tab_mesh360, text="4. 360 Meshing")
-        self.notebook.add(self.tab_turntable, text="5. Auto-Scan 360")
-        self.notebook.add(self.tab_recon, text="6. STL Reconstruction")
         
-        # เรียกใช้งานฟังก์ชันย่อย ให้เริ่มแปะองค์ประกอบปุ่ม/ตัวหนังสือแยกไปในแต่ละหน้าแท็บ
+        # Add frames to the menu with headings 1-7
+        self.notebook.add(self.tab_scan, text="1. Scan & Generate")
+        self.notebook.add(self.tab_multiPCP, text="2. Multi .ply process")
+        self.notebook.add(self.tab_proc, text="3. Cleanup & Process")
+        self.notebook.add(self.tab_merge, text="4. Merge 360")
+        self.notebook.add(self.tab_mesh360, text="5. 360 Meshing")
+        self.notebook.add(self.tab_turntable, text="6. Auto-Scan 360")
+        self.notebook.add(self.tab_recon, text="7. STL Reconstruction")
+        
+        
+        # Initialize UI components for each tab
         self.setup_scan_tab()
+        self.setup_multiPCP_tab()
         self.setup_processing_tab()
         self.setup_merge_tab()
         self.setup_360_meshing_tab()
@@ -111,10 +115,10 @@ class ScannerGUI:
         self.setup_stl_tab()
 
     # ==========================================
-    # ส่วนของฟังก์ชันจัดสรรหน้าตา GUI ของแต่ละแท็บ
+    # GUI Layout Functions for Each Tab
     # ==========================================
     def setup_scan_tab(self):
-        # หน้าจอหลักสำหรับ สแกน Calibrate ดึงจุด Point Cloud
+        # Main screen for Scanning, Calibration, and Point Cloud generation
         root = self.tab_scan
         
         # ป้ายหัวข้อใหญ่ด้านบนประจำหน้าจอ

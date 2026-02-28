@@ -1,30 +1,30 @@
 import threading
 import tkinter as tk
 
-# นำเข้าส่วนประกอบหลัก (Components) ของโปรแกรมตระกูลสแกน 3D ควบคุมทั้งระบบ Flask แบบจำลอง
+# Import main components of the 3D scanner system, controlling the simulated Flask server
 from server import run_flask
 from gui import ScannerGUI
 
 def main():
     # ----------------------------------------------------------------
-    # หน้าต่างเริ่มต้นของฟังก์ชัน (Entry Point) ที่ระบบทำการรันต้อนรับผู้ใช้งาน
+    # Main entry point where the system begins running and welcomes the user
     # ----------------------------------------------------------------
     print("----------------------------------------------------------------")
-    print("   Project 3D Scanner Controller v2.1 (With 360 Radial Fix)")
+    print("   Project 3D Scanner Controller (With 360 Radial Fix)")
     print("----------------------------------------------------------------")
     
-    # เปิดการทำงานของเว็บเซิร์ฟเวอร์แบบคู่ขนานเบื้องหลัง (Thread Daemon) เพื่อรับข้อมูลจากแอปมือถือพร้อมๆกัน
+    # Start the web server as a background daemon thread to receive mobile app data concurrently
     threading.Thread(target=run_flask, daemon=True).start()
     
-    # เรียกวาดจุดศูนย์กลาง (Root) ของหน้าจอ GUI ด้วย Tkinter Library
+    # Initialize the root window of the GUI using the Tkinter library
     root = tk.Tk()
     
-    # ส่งหน้าจอเปล่า (Root) ไปให้คลาส ScannerGUI ทำการก่อสร้างตึกอาคารตารางเมนู 6 แถบ
+    # Pass the root window to the ScannerGUI class to build the 6-tab menu layout
     app = ScannerGUI(root)
     
-    # สั่งให้จอของโปรแกรมเข้าสู่สภาวะรอรับผล (Mainloop) ค้างไว้ ป้องกันโปรแกรมปิดตัวเอง
+    # Run the mainloop to keep the window active and prevent the program from exiting
     root.mainloop()
 
-# เรียกใช้งานฟังก์ชัน Main ถ้าสคริปต์นี้เป็นจุดที่ถูกเรียก
+# Execute the main function if this script is run directly
 if __name__ == "__main__":
     main()

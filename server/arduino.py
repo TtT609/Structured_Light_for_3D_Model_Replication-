@@ -3,69 +3,69 @@ import serial
 import serial.tools.list_ports
 
 class ArduinoController:
-    # คลาสสำหรับจัดการและควบคุมแท่นหมุน (Turntable) ผ่านพอร์ตเชื่อมต่อสู่บอร์ด Arduino (หรือ ESP32)
+    # Class for managing and controlling a turntable via connection port to an Arduino (or ESP32) board
     def __init__(self):
-        # ฟังก์ชันเริ่มต้นตอนสร้างคลาส กำหนดว่าพอร์ตซีเรียล (Serial) ยังไม่ได้เชื่อมต่อ (เซ็ตค่าเป็น None ทีแรก)
+        # Initialization function when creating the class. Defines that the serial port is not yet connected (set to None initially)
         self.ser = None
 
     def get_ports(self):
-        # ฟังก์ชันในการสแกนและคืนค่ารายการรายชื่อพอร์ตเชื่อมต่อ (COM Port / /dev/tty) 
-        # ทั้งหมดที่ถูกเสียบและมองเห็นบนคอมพิวเตอร์นี้
+        # Function to scan and return a list of connection ports (COM Port / /dev/tty) 
+        # currently plugged in and visible on this computer
         return [p.device for p in serial.tools.list_ports.comports()]
 
     def connect(self, port, baudrate=115200):
-        # ฟังก์ชันเพื่อเปิดการเชื่อมต่อไปบนพอร์ตเป้าหมายที่กำหนดด้วยความเร็ว (Baudrate) 115200 ชิป ESP32
+        # Function to open a connection to a specified target port at a baud rate of 115200 (for ESP32 chips)
         try:
-            # สั่งเชื่อมต่อพอร์ต Serial โดยมีเวลา Timeout คือหากพยายามเปิดแล้วไม่สำเร็จใน 2 วินาทีให้ถือว่าพลาด
+            # Connect to the Serial port with a timeout; if opening fails within 2 seconds, consider it a failure
             self.ser = serial.Serial(port, baudrate, timeout=2)
-            # เมื่อเชื่อมต่อได้แล้ว บางครั้งบอร์ดจะ Restart ตัวเอง จึงหยุดรอ 2 วินาทีให้บอร์ดพร้อมก่อน
+            # Once connected, the board may restart itself, so wait for 2 seconds for the board to become ready
             time.sleep(2)  
-            # หากเชื่อมต่อผ่านไปได้ไม่มีปัญหา ให้ตอบกลับค่า True พร้อมข้อความการเชื่อมต่อสมบูรณ์
+            # If connected without issues, return True with a completion message
             return True, "Connected" 
         except Exception as e:
-            # หากเข้าเงื่อนไข Error ให้ดักจับและข้ามขั้นตอนไม่ให้โปรแกรมพัง แล้วรายงาน False กลับไป
+            # Catch errors to prevent a program crash and report False
             return False, str(e)
 
     def disconnect(self):
-        # ฟังก์ชันสำหรับยกเลิกและปิดการเชื่อมต่อบอร์ด Arduino
-        if self.ser: # หากในระบบตรวจสอบได้ว่ามันยังเชื่อมต่อใช้งานค้างอยู่ (self.ser ไม่ใช่ None)
-            self.ser.close() # สั่งปิดพอร์ตสัญญาณ Serial
-            self.ser = None  # ล้างแคชตัวแปรพอร์ตให้กลับเป็นสถานะไม่ได้เชื่อมต่อ (None)
+        # Function to cancel and close the Arduino board connection
+        if self.ser: # Check if the system is still connected (self.ser is not None)
+            self.ser.close() # Command to close the Serial signal port
+            self.ser = None  # Clear the port variable cache back to a disconnected state (None)
 
     def rotate(self, degrees):
-        # ฟังก์ชันส่งคำสั่งเพื่อให้แท่นมอเตอร์หมุนเป็นองศา (degrees) ที่กำหนด
-        if not self.ser: return False # ตรวจจับถ้าพอร์ตไม่ได้เปิดเชื่อมก็ให้เด้งทำไม่สำเร็จกลับไปเลย ข้ามทันที
+        # Function to send a command to rotate the motor by specified degrees
+        if not self.ser: return False # If the port is not open, return failure immediately
         try:
-            # ร่างข้อความสติงขึ้นมา คือค่าองศาพ่วงท้ายด้วยอักขระขึ้นบรรทัดใหม่ (\n) เพื่อให้ Arduino อ่านรู้ว่าจบประโยคข้อความตรงนี้แล้ว
+            # Create a command string: the degree value followed by a newline (\n) so Arduino knows the message ends
             cmd = f"{degrees}\n"
-            # ส่งข้อความผ่านสัญญาณ Serial ปกติต้องเข้ารหัสแบบไบนารี่ (Byte) ด้วย .encode() ก่อน
+            # Send message via Serial; it must be binary encoded using .encode() first
             self.ser.write(cmd.encode())
-            # ตอบกลับไปทิศทางบวกว่าส่งคำสั่งผ่านสมบูรณ์แล้วจ้า
+            # Return success status
             return True 
         except:
-            # ข้อผิดพลาดใดๆก็ข้ามไปโชว์ว่าทำงานสูญเปล่า
+            # Return failure status for any errors
             return False 
 
     def wait_for_done(self, timeout=30):
-        # ฟังก์ชันให้ระบบโปรแกรมสแกนค้างและรอจนกว่าทางบอร์ด Arduino จะตอบกลับมาว่าการหมุนจบลง (จำกัดรอมากสุด 30 วินาที)
-        if not self.ser: return False # เช็คเหมือนเดิมว่าสายพอร์ตยังอยู่ไหม
+        # Pause the scanning system and wait until Arduino replies that rotation has finished (max wait 30 seconds)
+        if not self.ser: return False # Check if the port connection is still active
         
-        start = time.time() # จดบันทึกเวลาวินาทีที่เริ่มต้นรอนี้
-        buffer = "" # ตัวแปรเปล่าสำหรับสะสมข้อความในอนาคต
+        start = time.time() # Record the start time
+        buffer = "" # Variable for accumulating messages
         
-        # วนรอบไปเรื่อยๆเพื่ออ่านคำ (ขณะที่ยังไม่หมดเวลาใน 30 วิ)
+        # Loop continuously to read data until the 30s timeout is reached
         while time.time() - start < timeout: 
-            if self.ser.in_waiting: # หากทางฟาก Arduino มีการส่งข้อมูลใดๆเข้ามา 
+            if self.ser.in_waiting: # If there is incoming data from Arduino
                 try:
-                    # ให้โปรแกรมอ่านข้อมูลสะสมจนกว่าจะเจอจุดสิ้นสุดบรรทัด แล้วตัดช่องว่างออก
+                    # Read incoming data until a newline is found, then strip whitespace
                     line = self.ser.read_until().decode().strip()
-                    # ถ้าภายในข้อความมีคำว่า "DONE" ปรากฏอยู่ แสดงให้เห็นว่าหมุนมอเตอร์เสร็จ ก็ออกจากลูปไปทำงานทิศทางบวกต่อ
+                    # If "DONE" is found, motor rotation is complete; exit the loop and proceed
                     if "DONE" in line: return True
                 except: 
-                    pass # กันข้อผิดพลาดของการเข้ารหัสถ้าบอร์ดส่งขยะมา ให้ผ่านไปรออ่านบรรทัดถัดไป
+                    pass # Prevent encoding errors from garbage data; skip and wait for next line
             
-            # หลับโปรแกรมเป็นเวลา 0.1 วินาทีก่อนจะวนรับรอบใหม่ในคราวหน้า (ช่วยลดความรวนของ CPU และพักระบบให้เสถียรขึ้น)
+            # Sleep for 0.1 seconds before the next loop to reduce CPU usage and stabilize the system
             time.sleep(0.1) 
             
-        # ถ้าพ้นจุดของการวนลูปไป 30 วิยังไม่ออก แสดงว่าเวลาเกินกำหนด Arduino ตอบช้า (Timeout) 
+        # If the loop finishes after 30 seconds without exiting, the Arduino timed out
         return False 
