@@ -5,7 +5,7 @@ from datetime import datetime
 # CONFIGURATION
 # ==========================================
 
-# --- Folder Structure (โครงสร้างโฟลเดอร์) ---
+# --- Folder Structure ---
 # Main folder for storing scan data, named after the current date (e.g., 28_02_2026_3Dscan)
 DEFAULT_ROOT = os.path.join(os.getcwd(), f"{datetime.now().strftime('%d_%m_%Y')}_3Dscan")
 
@@ -21,7 +21,7 @@ PROJ_VALUE = 200
 # Downsampling ratio to increase speed (1 is no reduction, >1 reduces image size)
 D_SAMPLE_PROJ = 1       
 
-# --- Checkerboard Settings (การตั้งค่ากระดานหมากรุกสำหรับ Calibrate) ---
+# --- Checkerboard Settings ---
 # Number of inner corner grid points - rows
 CHECKER_ROWS = 7        
 # Number of inner corner grid points - columns

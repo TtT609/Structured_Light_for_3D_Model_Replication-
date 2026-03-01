@@ -39,6 +39,22 @@ def poll_command():
     # Update the timestamp of the most recent polling request
     SERVER_STATE["last_seen"] = current_time 
 
+    # --- LONG POLLING IMPLEMENTATION ---
+    # Hold the connection open on the server side if there is no command to execute.
+    # This prevents the phone from spamming requests and overheating, without changing the phone app.
+    timeout = 2.0  # Maximum time in seconds to wait before returning 'idle' to the phone
+    start_time = time.time()  # Record the exact time the request started
+    
+    # Keep looping while the server is 'idle' and the timeout has not been reached
+    while SERVER_STATE["command"] == "idle" and (time.time() - start_time) < timeout:
+        # Sleep for a tiny amount (100ms) to free up CPU and create a delay loop
+        time.sleep(0.1) 
+        
+        # Continuously update the 'last_seen' timestamp during this wait loop
+        # This tells the server's monitor thread that the phone is still actively connected
+        SERVER_STATE["last_seen"] = time.time()
+
+    # After the loop (either a command came in, or 2 seconds passed), send the response
     # Return the current command action and command ID to the mobile device in JSON format
     return jsonify({
         "action": SERVER_STATE["command"],

@@ -39,19 +39,38 @@ class ScannerGUI:
         # Destination folder for individual scan bit images
         self.scan_capture_dir = tk.StringVar(value=os.path.join(DEFAULT_ROOT, "scans", "object_01"))
         
-        # --- State Variables (Combined Processing) ---
+        # --- State Variables (Multi PLY Process - Tab 2) ---
+        self.mpcp_calib_file = tk.StringVar(value=os.path.join(DEFAULT_ROOT, "calib", "calib.mat"))
+        self.mpcp_input_path = tk.StringVar()
+        self.mpcp_mode = tk.StringVar(value="single") # 'single' or 'batch'
+        
+        # --- State Variables (Combined Processing - Tab 3) ---
         # Unified Processing menu
         self.proc_input_dir = tk.StringVar()  # Input folder
         self.proc_output_dir = tk.StringVar() # Output folder
         
+        # Checkboxes for toggling specific cleaning algorithms
+        self.enable_bg_removal = tk.BooleanVar(value=True) # Enable/Disable background wall removal variable
+        self.enable_outlier_removal = tk.BooleanVar(value=True) # Enable/Disable statistical noise removal variable
+        self.enable_radius_outlier = tk.BooleanVar(value=False) # Enable/Disable radius noise removal variable
+        self.enable_cluster = tk.BooleanVar(value=False) # Enable/Disable keeping only the largest cluster variable
+        
         # BG Params (Background Removal Parameters)
         self.bg_dist_thresh = tk.DoubleVar(value=50.0) # Depth threshold from wall
         self.bg_ransac_n = tk.IntVar(value=3) # Number of random points
-        self.bg_iterations = tk.IntVar(value=1000) # Randomization attempts
+        self.bg_iterations = tk.IntVar(value=1000) # RANSAC iterations
         
-        # Outlier Params (Noise/Dust removal)
-        self.proc_nb_neighbors = tk.IntVar(value=20) # Number of neighbors
-        self.proc_std_ratio = tk.DoubleVar(value=2.0) # Distance ratio percentage
+        # Statistical Outlier Params
+        self.proc_nb_neighbors = tk.IntVar(value=20)   # Number of neighbors for distance calculation
+        self.proc_std_ratio = tk.DoubleVar(value=2.0)  # Standard deviation ratio for outlier threshold
+        
+        # Radius Outlier Params
+        self.proc_radius_nb = tk.IntVar(value=100)
+        self.proc_radius_r = tk.DoubleVar(value=5.0)
+        
+        # Cluster Params
+        self.proc_cluster_eps = tk.DoubleVar(value=5.0)
+        self.proc_cluster_min = tk.IntVar(value=200)
         
         # 360 Merge Params (Stitching models for 360-degree view)
         self.merge_input_dir = tk.StringVar()
@@ -117,95 +136,132 @@ class ScannerGUI:
     # ==========================================
     # GUI Layout Functions for Each Tab
     # ==========================================
+    def setup_multiPCP_tab(self):
+        # screen 2: Multi .ply process (Batch Point Cloud Generator)
+        root = self.tab_multiPCP
+        ttk.Label(root, text="Batch Point Cloud Generator", font=("Arial", 14, "bold")).pack(pady=10)
+        
+        # 1. Calibration Section
+        lf1 = ttk.LabelFrame(root, text="1. Calibration File (.mat)")
+        lf1.pack(fill=tk.X, padx=10, pady=10)
+        
+        f1 = ttk.Frame(lf1)
+        f1.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(f1, text="Browse .mat", command=lambda: self.sel_file_load(self.mpcp_calib_file, "MAT")).pack(side=tk.LEFT)
+        ttk.Entry(f1, textvariable=self.mpcp_calib_file).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+
+        # 2. Input Section
+        lf2 = ttk.LabelFrame(root, text="2. Input Target")
+        lf2.pack(fill=tk.X, padx=10, pady=5)
+        
+        f_radio = ttk.Frame(lf2)
+        f_radio.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Radiobutton(f_radio, text="Single Scan Folder", variable=self.mpcp_mode, value="single").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(f_radio, text="Batch (Parent Folder of Scans)", variable=self.mpcp_mode, value="batch").pack(side=tk.LEFT, padx=10)
+        
+        f2 = ttk.Frame(lf2)
+        f2.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(f2, text="Select Folder", command=lambda: self.sel_dir(self.mpcp_input_path)).pack(side=tk.LEFT)
+        ttk.Entry(f2, textvariable=self.mpcp_input_path).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+
+        # 3. Execution
+        self.btn_run_mpcp = ttk.Button(root, text="START GENERATING PLY", command=self.do_multi_pcp)
+        self.btn_run_mpcp.pack(fill=tk.X, padx=20, pady=15)
+
+        # 4. Logs
+        lf3 = ttk.LabelFrame(root, text="Processing Logs")
+        lf3.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        self.txt_log_mpcp = tk.Text(lf3, state='disabled', height=10)
+        self.txt_log_mpcp.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
     def setup_scan_tab(self):
         # Main screen for Scanning, Calibration, and Point Cloud generation
         root = self.tab_scan
         
-        # ป้ายหัวข้อใหญ่ด้านบนประจำหน้าจอ
+        # Large header label at the top of the screen
         ttk.Label(root, text="3D Scanner Workflow", font=("Arial", 16, "bold")).pack(pady=10)
-        # ป้ายบอกเลข IP (เบื้องต้นให้ขึ้น Connecting... ก่อน)
+        # IP address label (initially display Connecting...)
         self.ip_lbl = ttk.Label(root, text="Connecting...", foreground="blue")
         self.ip_lbl.pack()
-        # ดึงเลขวงแลนมากางให้มือถือมาร่วมวง
+        # Pull LAN IP to display for phone connection
         self.update_ip()
         
-        # --- กรอบ STEP 1: Calibrate Capture ---
+        # --- Frame STEP 1: Calibrate Capture ---
         lf1 = ttk.LabelFrame(root, text="1. Calibration Capture")
         lf1.pack(fill=tk.X, padx=10, pady=5)
         
         f1_top = ttk.Frame(lf1)
         f1_top.pack(fill=tk.X, padx=5, pady=5)
         ttk.Label(f1_top, text="Number of Poses:").pack(side=tk.LEFT)
-        # ช่องสปินเนอร์ให้กดลูกศรขึ้นลงป้อนจำนวนท่าทาง (ล๊อกระหว่าง 3-20 ท่า)
+        # Spinner field to input number of poses with arrows (locked between 3-20 poses)
         ttk.Spinbox(f1_top, from_=3, to=20, textvariable=self.num_poses, width=5).pack(side=tk.LEFT, padx=5)
         
-        # ปุ่มเริ่มจับภาพ Calibrate ถ่ายรูปกระดานหมากรุก (เรียกฟังก์ชัน)
+        # Button to start capturing Calibration chessboard photos (calls function)
         ttk.Button(lf1, text="Capture Calib Images", command=self.do_calib_capture).pack(fill=tk.X, padx=5, pady=5)
         ttk.Label(lf1, text="Save Folder:").pack(anchor=tk.W, padx=5)
-        # ช่องกรอก/ดูว่าโฟลเดอร์ไหนถูกเลือก (ผูกกับตัวแปร calib_capture_dir)
+        # Input/view field for selected folder (bound to calib_capture_dir)
         ttk.Entry(lf1, textvariable=self.calib_capture_dir).pack(fill=tk.X, padx=5, pady=(0,5))
         
-        # --- กรอบ STEP 2: Calib Process ---
+        # --- Frame STEP 2: Calib Process ---
         lf2 = ttk.LabelFrame(root, text="2. Calibration Processing")
         lf2.pack(fill=tk.X, padx=10, pady=5)
         
-        # ปุ่มกดคำนวนวิเคราะห์มุมกล้องตามโฟลเดอร์รูปภาพในช่องเซฟ
+        # Button to calculate and analyze camera angles based on the saved images folder
         ttk.Button(lf2, text="Compute Calibration (Select Folder)", command=self.do_calib_compute).pack(fill=tk.X, padx=5, pady=5)
         ttk.Label(lf2, text="Result File (.mat):").pack(anchor=tk.W, padx=5)
-        # ช่องกรอก/ดูว่าไฟล์ .mat ไปหมกอยู่ไหน
+        # Input/view field for location of .mat file
         ttk.Entry(lf2, textvariable=self.calib_file).pack(fill=tk.X, padx=5, pady=(0,5))
         
-        # --- กรอบ STEP 3: Scan Capture ---
+        # --- Frame STEP 3: Scan Capture ---
         lf3 = ttk.LabelFrame(root, text="3. Scan Capture")
         lf3.pack(fill=tk.X, padx=10, pady=5)
         
         f3 = ttk.Frame(lf3); f3.pack(fill=tk.X)
         ttk.Label(f3, text="Object Name:").pack(side=tk.LEFT, padx=5)
-        # ช่องกรอกชื่อวัตถุ เผื่อสแกนหลายชิ้นจะได้ไม่ทับกัน
+        # Object name input field. For scanning multiple items without overwriting
         ttk.Entry(f3, textvariable=self.scan_name).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        # ปุ่มเริ่มฉายแสงลายขวางลายตั้งเพื่อเก็บพิกัด 3D
+        # Button to start projecting horizontal/vertical patterns for 3D coordinates
         ttk.Button(lf3, text="Capture Scan Images", command=self.do_scan_capture).pack(fill=tk.X, padx=5, pady=5)
         ttk.Label(lf3, text="Scan Folder:").pack(anchor=tk.W, padx=5)
         ttk.Entry(lf3, textvariable=self.scan_capture_dir).pack(fill=tk.X, padx=5, pady=(0,5))
         
-        # --- กรอบ STEP 4: Cloud Gen ---
-        lf4 = ttk.LabelFrame(root, text="4. Point Cloud Generation")
-        lf4.pack(fill=tk.X, padx=10, pady=5)
+        # --- Frame STEP 4: Application Logs ---
+        lf4 = ttk.LabelFrame(root, text="4. Application Logs")
+        lf4.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        f4_top = ttk.Frame(lf4)
-        f4_top.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Label(f4_top, text="Calib File (.mat):").pack(side=tk.LEFT)
-        ttk.Entry(lf4, textvariable=self.calib_file).pack(fill=tk.X, padx=5)
-        # เผื่อลืมไฟล์เก่าๆ ก็สามารถชี้เป้า เลือกไฟล์เก่ากลับมาทำงานได้
-        ttk.Button(lf4, text="Select .mat File", command=self.select_calib_file).pack(fill=tk.X, padx=5, pady=2)
-        
-        # ปุ่มปิดจ็อบ ถลุงรหัสสร้างก้อนเมฆพิกัด 3D ออกมา
-        ttk.Button(lf4, text="Generate .PLY (Select Scan Folder)", command=self.do_cloud_gen).pack(fill=tk.X, padx=5, pady=5)
+        # Text box to display Log replacing the black console window
+        self.txt_log_main = tk.Text(lf4, state='disabled', height=10)
+        self.txt_log_main.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
     def setup_processing_tab(self):
-        # หน้าจอที่ 2: งานเคลียร์ขยะ หักล้างพื้นผนัง
+        # Tab 2: Clear noise, remove background walls
         root = self.tab_proc
         ttk.Label(root, text="Step 2: Cleanup & Process (Batch)", font=("Arial", 14, "bold")).pack(pady=10)
         ttk.Label(root, text="Pipeline: Load -> Remove Background -> Remove Outliers -> Save", foreground="blue").pack()
 
-        # กรอบแหล่งอ้างอิงไฟล์ทั้งหมด (โหลดทีเดียวได้หลายไฟล์ Batch process)
+        # Frame for all source files (Allows multi-file loading - Batch process)
         lf_files = ttk.LabelFrame(root, text="Files")
         lf_files.pack(fill=tk.X, padx=10, pady=5)
         
-        # โฟลเดอร์ต้นรัน
+        # Source folder
         f_in = ttk.Frame(lf_files); f_in.pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(f_in, text="Select Input Folder", command=lambda: self.sel_dir(self.proc_input_dir)).pack(side=tk.LEFT)
         ttk.Entry(f_in, textvariable=self.proc_input_dir).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        # โฟลเดอร์จุดหมาย
+        # Destination folder
         f_out = ttk.Frame(lf_files); f_out.pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(f_out, text="Select Output Folder", command=lambda: self.sel_dir(self.proc_output_dir)).pack(side=tk.LEFT)
         ttk.Entry(f_out, textvariable=self.proc_output_dir).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
-        # 1. พารามิเตอร์ของ Background Remove
+        # 1. Background Remove parameters
         lf_bg = ttk.LabelFrame(root, text="1. Background Removal (Plane Segmentation)")
         lf_bg.pack(fill=tk.X, padx=10, pady=5)
+        
+        # 📌 Add Checkbox to toggle intelligent background removal (Plane Segmentation)
+        f_enable_bg = ttk.Frame(lf_bg)
+        f_enable_bg.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Checkbutton(f_enable_bg, text="Enable Background Removal", variable=self.enable_bg_removal).pack(side=tk.LEFT)
         
         f_dist = ttk.Frame(lf_bg); f_dist.pack(fill=tk.X, padx=5, pady=2)
         ttk.Label(f_dist, text="Distance Threshold (default 50.0):").pack(side=tk.LEFT)
@@ -216,14 +272,19 @@ class ScannerGUI:
         ttk.Entry(f_rn, textvariable=self.bg_ransac_n, width=5).pack(side=tk.LEFT, padx=5)
         ttk.Entry(f_rn, textvariable=self.bg_iterations, width=8).pack(side=tk.LEFT, padx=5)
         
-        # คำใบ้ตัวหนังสือ ช่วยผู้ใช้เข้าใจ
+        # Text hint helping user understand
         bg_desc = ("Distance Thresh: Max distance a point can be from the wall plane to be considered 'wall'.\n"
                    "RANSAC n: Points sampled per iteration. Iterations: How many times to try fitting the plane.")
         ttk.Label(lf_bg, text=bg_desc, foreground="#555", justify=tk.LEFT, wraplength=550).pack(padx=5, pady=5)
 
-        # 2. แก๊งกำจัดขยะ (Outliers) ละอองผง
+        # 2. Statistical Outlier Removal group
         lf_out = ttk.LabelFrame(root, text="2. Statistical Outlier Removal")
         lf_out.pack(fill=tk.X, padx=10, pady=5)
+        
+        # 📌 Add Checkbox to toggle Statistical Noise Removal process
+        f_enable_out = ttk.Frame(lf_out)
+        f_enable_out.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Checkbutton(f_enable_out, text="Enable Statistical Outlier Removal", variable=self.enable_outlier_removal).pack(side=tk.LEFT)
         
         f_nb = ttk.Frame(lf_out); f_nb.pack(fill=tk.X, padx=5, pady=2)
         ttk.Label(f_nb, text="nb_neighbors (20):").pack(side=tk.LEFT)
@@ -237,23 +298,59 @@ class ScannerGUI:
                     "std_ratio: Threshold. Lower (0.5-1.0) = Aggressive removal. Higher (2.0+) = Conservative.")
         ttk.Label(lf_out, text=out_desc, foreground="#555", justify=tk.LEFT, wraplength=550).pack(padx=5, pady=5)
 
-        # ปุ่มเริ่มถลุงงาน Batch processing รวดเดียวจบ
+        # 3. Radius Outlier Removal group
+        lf_rad = ttk.LabelFrame(root, text="3. Radius Outlier Removal")
+        lf_rad.pack(fill=tk.X, padx=10, pady=5)
+        
+        f_enable_rad = ttk.Frame(lf_rad); f_enable_rad.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Checkbutton(f_enable_rad, text="Enable Radius Outlier Removal", variable=self.enable_radius_outlier).pack(side=tk.LEFT)
+        
+        f_rnb = ttk.Frame(lf_rad); f_rnb.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(f_rnb, text="nb_points (100):").pack(side=tk.LEFT)
+        ttk.Entry(f_rnb, textvariable=self.proc_radius_nb, width=10).pack(side=tk.LEFT, padx=5)
+        
+        f_r = ttk.Frame(lf_rad); f_r.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(f_r, text="radius (5.0):").pack(side=tk.LEFT)
+        ttk.Entry(f_r, textvariable=self.proc_radius_r, width=10).pack(side=tk.LEFT, padx=5)
+        
+        rad_desc = "Removes points that have fewer than 'nb_points' within a given 'radius'."
+        ttk.Label(lf_rad, text=rad_desc, foreground="#555", justify=tk.LEFT, wraplength=550).pack(padx=5, pady=5)
+
+        # 4. Keep only the Largest Cluster
+        lf_clus = ttk.LabelFrame(root, text="4. Keep Largest Cluster (DBSCAN)")
+        lf_clus.pack(fill=tk.X, padx=10, pady=5)
+        
+        f_enable_clus = ttk.Frame(lf_clus); f_enable_clus.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Checkbutton(f_enable_clus, text="Enable Largest Cluster Filter", variable=self.enable_cluster).pack(side=tk.LEFT)
+        
+        f_eps = ttk.Frame(lf_clus); f_eps.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(f_eps, text="eps radius (5.0):").pack(side=tk.LEFT)
+        ttk.Entry(f_eps, textvariable=self.proc_cluster_eps, width=10).pack(side=tk.LEFT, padx=5)
+        
+        f_min = ttk.Frame(lf_clus); f_min.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(f_min, text="min_points (200):").pack(side=tk.LEFT)
+        ttk.Entry(f_min, textvariable=self.proc_cluster_min, width=10).pack(side=tk.LEFT, padx=5)
+        
+        clus_desc = "Groups points closer than 'eps radius'. Keeps only the largest group. Removes floating fragments."
+        ttk.Label(lf_clus, text=clus_desc, foreground="#555", justify=tk.LEFT, wraplength=550).pack(padx=5, pady=5)
+
+        # Button to start Batch processing all at once
         ttk.Button(root, text="Run Processing Pipeline", command=self.do_batch_processing).pack(fill=tk.X, padx=20, pady=20)
     
     def setup_merge_tab(self):
-        # หน้าจอที่ 3: จับโมเดลตะล่อมให้เข้ามุมแล้วปั้นก้อนเดียวกัน
+        # Tab 3: Align models then merge into one single form
         root = self.tab_merge
         ttk.Label(root, text="Step 3: 360 Degree Merge (Multi-view Alignment)", font=("Arial", 14, "bold")).pack(pady=10)
         
         lf_files = ttk.LabelFrame(root, text="Files")
         lf_files.pack(fill=tk.X, padx=10, pady=5)
         
-        # เอาไฟล์สแกนเศษทั้งหมด (ในโฟลเดอร์เดียวกัน) โยนมา
+        # Throw all raw scan files (in the same folder)
         f_in = ttk.Frame(lf_files); f_in.pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(f_in, text="Select Input Folder (All PLYs)", command=lambda: self.sel_dir(self.merge_input_dir)).pack(side=tk.LEFT)
         ttk.Entry(f_in, textvariable=self.merge_input_dir).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        # ชื่อจุดหมายปลายทางของไฟลืที่รวบแผงแล้ว
+        # Destination name of the processed file
         f_out = ttk.Frame(lf_files); f_out.pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(f_out, text="Select Output File (.ply)", command=lambda: self.sel_file_save(self.merge_output_file, "PLY")).pack(side=tk.LEFT)
         ttk.Entry(f_out, textvariable=self.merge_output_file).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
@@ -269,7 +366,7 @@ class ScannerGUI:
         ttk.Button(root, text="Merge 360 Point Clouds", command=self.do_merge_360).pack(fill=tk.X, padx=20, pady=20)
 
     def setup_360_meshing_tab(self):
-        # หน้าจอที่ 4: การถัก Mesh เคลือบพื้นผิวให้กับผลงานผูกขาด 360 องศาโดยเฉพาะ
+        # Tab 4: Mesh stitching surface coating exclusively for 360 degree 3D models
         root = self.tab_mesh360
         ttk.Label(root, text="Step 4: 360 Meshing (Poisson + Normal Re-orientation)", font=("Arial", 14, "bold")).pack(pady=10)
         
@@ -287,10 +384,10 @@ class ScannerGUI:
         lf_param = ttk.LabelFrame(root, text="Parameters")
         lf_param.pack(fill=tk.X, padx=10, pady=5)
         
-        # เลือกทิศทางการถักโครง (Radial, Tangent)
+        # Select mesh stitching direction (Radial, Tangent)
         f_m = ttk.Frame(lf_param); f_m.pack(fill=tk.X, padx=5, pady=5)
         ttk.Label(f_m, text="Orientation Mode:").pack(side=tk.LEFT)
-        # Dropdown Combobox ให้คนเลือก
+        # Dropdown Combobox for user selection
         ttk.Combobox(f_m, textvariable=self.m360_mode, values=["radial", "tangent"], state="readonly", width=10).pack(side=tk.LEFT, padx=5)
         ttk.Label(f_m, text="(Radial = Outwards from center | Tangent = Graph consistency)", foreground="#555").pack(side=tk.LEFT)
 
@@ -306,11 +403,11 @@ class ScannerGUI:
         ttk.Button(root, text="Run 360 Meshing", command=self.do_360_meshing).pack(fill=tk.X, padx=20, pady=20)
 
     def setup_turntable_tab(self):
-        # หน้าจอที่ 5 ควบคุมมอเตอร์ Arduino อัตโนมัติ (Turntable)
+        # Tab 5 Automatic Arduino motor control (Turntable)
         root = self.tab_turntable
         ttk.Label(root, text="Step 5: Auto-Scan with Turntable (Arduino)", font=("Arial", 14, "bold")).pack(pady=10)
         
-        # 1. กล่องกรอกพอร์ต
+        # 1. Port input box
         lf_conn = ttk.LabelFrame(root, text="1. Arduino Connection")
         lf_conn.pack(fill=tk.X, padx=10, pady=5)
         
@@ -321,7 +418,7 @@ class ScannerGUI:
         ttk.Button(f_p, text="Refresh", command=self.refresh_ports).pack(side=tk.LEFT, padx=2)
         ttk.Button(f_p, text="Connect", command=self.connect_arduino).pack(side=tk.LEFT, padx=5)
         
-        # 2. ตั้งค่าระยะหมุน
+        # 2. Set rotation distance
         lf_set = ttk.LabelFrame(root, text="2. Scan Settings")
         lf_set.pack(fill=tk.X, padx=10, pady=5)
         
@@ -333,13 +430,13 @@ class ScannerGUI:
         ttk.Label(f_cnt, text="Number of Turns (e.g., 12):").pack(side=tk.LEFT)
         ttk.Entry(f_cnt, textvariable=self.tt_turns, width=10).pack(side=tk.LEFT, padx=5)
         
-        # อัปเดตตัวเลขแสดงผลรวมทุกครั้งที่พิมพ์เลข (เช่น 30 x 12 = 360 รอดตัว!)
+        # Update total display number every time a number is typed (e.g. 30 x 12 = 360 degrees!)
         self.lbl_total = ttk.Label(lf_set, text="Total: 360 degrees", foreground="blue")
         self.lbl_total.pack(padx=5, pady=5)
         self.tt_degrees.trace_add("write", self.update_tt_totals)
         self.tt_turns.trace_add("write", self.update_tt_totals)
         
-        # 3. กล่องคุมปลายทางเซฟ 
+        # 3. Save destination control box 
         lf_out = ttk.LabelFrame(root, text="3. Output")
         lf_out.pack(fill=tk.X, padx=10, pady=5)
         
@@ -351,12 +448,12 @@ class ScannerGUI:
         ttk.Button(f_dir, text="Select Save Folder", command=lambda: self.sel_dir(self.tt_save_dir)).pack(side=tk.LEFT)
         ttk.Entry(f_dir, textvariable=self.tt_save_dir).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        # 4. ปุ่มเริ่มรันจักรกลนรก
+        # 4. Button to start running the automated machine
         ttk.Label(root, textvariable=self.tt_status, font=("Arial", 12)).pack(pady=10)
         ttk.Button(root, text="START AUTO SCAN", command=self.do_auto_scan_sequence, state="normal").pack(fill=tk.X, padx=20, pady=10)
 
     def setup_stl_tab(self):
-        # หน้าจอที่ 6 (สุดท้าย): ขึ้นโครง 3D ปกติสำหรับพ้อยคลาย์แบนๆ 
+        # Tab 6 (Final): Normal 3D meshing for flat point clouds 
         root = self.tab_recon
         ttk.Label(root, text="STL Reconstruction", font=("Arial", 14, "bold")).pack(pady=10)
         
@@ -378,90 +475,93 @@ class ScannerGUI:
         ttk.Label(f_m, text="Reconstruction Mode:").pack(side=tk.LEFT)
         cb = ttk.Combobox(f_m, textvariable=self.s_mode, values=["watertight", "surface"], state="readonly")
         cb.pack(side=tk.LEFT, padx=5)
-        # กดเปลี่ยนโหมดแล้วจะซ่อนหน้าต่างพ่วงลูกเล่น
+        # Changing mode will hide/show additional feature frames
         cb.bind("<<ComboboxSelected>>", self.update_stl_params)
         
-        # เฟรมสำหรับโชว์ตัวแปรที่ซ่อนอยู่ (ซ่อน/โผล่ เมื่อโหมด Combox เปลี่ยนค่า)
+        # Frame to show hidden variables (Hide/Show when Combobox mode changes)
         self.f_stl_params = ttk.Frame(lf_mode)
         self.f_stl_params.pack(fill=tk.X, padx=5, pady=5)
-        self.update_stl_params() # รีเฟซก่อนหนึงครั้ง
+        self.update_stl_params() # Refresh once
         
         ttk.Button(root, text="Run STL Reconstruction", command=self.do_stl_recon).pack(fill=tk.X, padx=20, pady=20)
 
 
     # ==========================================
-    # ส่วนของฟังก์ชันคำสั่งกดปุ่ม (Actions and Helper Actions)
+    # Button command functions section (Actions and Helper Actions)
     # ==========================================
 
     def update_stl_params(self, event=None):
-        # ฟังก์ชันสลับเมนูลูกเล่นในหน้า 6 ตามโหมด (Watertight/Surface)
+        # Function to toggle feature menus in Tab 6 depending on mode (Watertight/Surface)
         for widget in self.f_stl_params.winfo_children():
-            widget.destroy() # ลบของเก่าออกไปให้หมดก่อน
+            widget.destroy() # Clear out all old items first
             
         mode = self.s_mode.get()
         if mode == "watertight":
-            # ถ้าเป็นโหมดตัน ก็จะมีฟิลด์ใส่ค่า Depth
+            # If it is solid mode, there will be a Depth input field
             ttk.Label(self.f_stl_params, text="Poisson Depth (default 10):").pack(anchor=tk.W)
             ttk.Entry(self.f_stl_params, textvariable=self.s_depth).pack(fill=tk.X)
             ttk.Label(self.f_stl_params, text="Creates a closed (watertight) mesh. Higher depth = more detail but slower.", foreground="#555").pack(anchor=tk.W)
         else:
-            # ถ้าเป็นพื้นผิวโปรง จะมีแค่ Ball Radii
+            # If it is surface mode, there will only be Ball Radii
             ttk.Label(self.f_stl_params, text="Ball Radii Multipliers (default '1, 2, 4'):").pack(anchor=tk.W)
             ttk.Entry(self.f_stl_params, textvariable=self.s_radii).pack(fill=tk.X)
             ttk.Label(self.f_stl_params, text="Multiples of average point distance. Connects dots without filling large holes.", foreground="#555").pack(anchor=tk.W)
 
     def sel_file_load(self, var, ftype):
-        # ฟังก์ชันรองรับการเปิดหน้าต่างให้คนคลิกเลือกไฟล์โหลดเข้ามา (หน้าตากล่อง Dialog ทั่วไป)
-        ext = "*.ply" if ftype == "PLY" else "*.*"
+        # Function to open a window to select a file (Standard Dialog box)
+        if ftype == "PLY": ext = "*.ply"
+        elif ftype == "MAT": ext = "*.mat"
+        else: ext = "*.*"
+        
         f = filedialog.askopenfilename(filetypes=[(ftype, ext)])
         if f: 
             var.set(f)
-            # เติมชื่อไฟล์ช่อง Output (ทางออกให้ล่วงหน้าเลย ถ้าเห็นมันว่างๆ ผู้ใช้จะได้ไม่ต้องพิมพ์เองเสียเวลา)
+            # Fill Output filename (autofill output path so user doesn't have to type it manually if empty)
             if ftype == "PLY":
-                # สำหรับโหมดหน้า 6 STL
+                # For Tab 6 STL mode
                 if var == self.s_input_ply and not self.s_output_stl.get():
                     self.s_output_stl.set(f.replace(".ply", ".stl"))
-                # สำหรับโหมดหน้า 360 Mesh (เผื่อ)
+                # For 360 Mesh mode
                 if var == self.m360_input_ply and not self.m360_output_stl.get():
                     self.m360_output_stl.set(f.replace(".ply", ".stl"))
 
     def sel_file_save(self, var, ftype):
-        # ฟังก์ชันเรียกกล่อง Dialog บันทึกไฟล์ Save As
+        # Function to call 'Save As' Dialog box
         ext = "*.ply" if ftype == "PLY" else "*.stl"
         f = filedialog.asksaveasfilename(filetypes=[(ftype, ext)], defaultextension=ext.replace("*", ""))
         if f: var.set(f)
 
     def sel_dir(self, var):
-        # ฟังก์ชันเรียกกล่อง Dialog หน้าต่างเลือกโฟลเดอร์ 
+        # Function to call folder selection Dialog window 
         d = filedialog.askdirectory()
         if d: var.set(d)
 
     def update_ip(self):
-        # ฟังก์ชันเจาะหา IP วงแลนตัวเครื่องเราเอง เอาไปแสดงให้มือถือรู้ว่าต้องพิมพ์เชื่อมที่แอดเดรสไหน
+        # Function to find local IP to show to mobile device for connection
         import socket
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]; s.close() # ขุด IP ขึ้นมา
-            self.ip_lbl.config(text=f"Connect Phone to: http://{ip}:5000") # ตบขึ้นหน้าจอ
+            ip = s.getsockname()[0]; s.close() # Dig up IP
+            self.ip_lbl.config(text=f"Connect Phone to: http://{ip}:5000") # Display on screen
         except: pass
 
     def refresh_ports(self):
-        # ให้มันดึงชื่อ COM 1 COM 2 ขึ้นมาประดับบารมีที่ Dropdown (แท่นหมุน)
+        # Pull COM 1 COM 2 into the Dropdown for the Turntable
         ports = self.arduino.get_ports()
         self.cb_port['values'] = ports
-        if ports: self.cb_port.current(0) # ท้ารีเฟซแล้วยังไงก็ยงโพล่ เลือกเป็นหลักตังรอเลยอันแรกนั่นละ
+        if ports: self.cb_port.current(0) # If refreshed and appears, select the first one by default
     
     def connect_arduino(self):
-        # รับการลั่นไกปุ่ม Connect Arduino
+        # Receive Connect Arduino button trigger
         p = self.tt_port.get()
         if not p: messagebox.showerror("Error", "Select a port"); return
         
-        ok, msg = self.arduino.connect(p) # จั่วหาพอร์ตว่าติดไหม
+        ok, msg = self.arduino.connect(p) # Check if port is connected
         if ok: messagebox.showinfo("Connected", "Arduino Connected!")
         else: messagebox.showerror("Error", f"Failed: {msg}")
 
     def update_tt_totals(self, *args):
-        # เมื่อเปลี่ยนค่า Degree หรือ Turns ในช่องพิมพ์ ก็สลับค่ามาคำณวนองศารวมหน้าจอสดๆ เช่น 15*22=...
+        # When Degree or Turns is changed, dynamically calculate total degrees on screen e.g. 15*22=...
         try:
             d = self.tt_degrees.get()
             t = self.tt_turns.get()
@@ -469,17 +569,40 @@ class ScannerGUI:
             self.lbl_total.config(text=f"Total: {total} degrees ({t} scans)")
         except: pass
 
-    # --- ฟังก์ชันกระทำการรันประมวลผล (ส่วนสั่งงาน Threading ทำคู่ขนานเพื่อไม่ให้หน้าจอค้าง) ---
+    def mpcp_log(self, message):
+        # Helper to neatly write logs to the text box in Tab 2
+        self.root.after(0, self._append_mpcp_log, message)
+        
+    def _append_mpcp_log(self, message):
+        self.txt_log_mpcp.config(state='normal')
+        self.txt_log_mpcp.insert(tk.END, message + "\n")
+        self.txt_log_mpcp.see(tk.END)
+        self.txt_log_mpcp.config(state='disabled')
+        
+    def sys_log(self, message):
+        # Helper to write logs to the main Application Logs in Tab 1
+        self.root.after(0, self._append_sys_log, message)
+        
+    def _append_sys_log(self, message):
+        try:
+            self.txt_log_main.config(state='normal')
+            self.txt_log_main.insert(tk.END, message + "\n")
+            self.txt_log_main.see(tk.END)
+            self.txt_log_main.config(state='disabled')
+        except:
+            pass # Failsafe just in case it's called before GUI builds
+
+    # --- Execution Functions (Threading sections running in parallel to prevent GUI freezing) ---
 
     def do_calib_capture(self):
-        # รับปุ่มสั่งการทำงานขั้นแรก: ถ่ายเก็บภาพ Calibration 
+        # Receive first step button command: Capture Calibration photos 
         d = self.calib_capture_dir.get()
         n = self.num_poses.get()
-        # เริ่มการสาดแสงกากบาดใส่หน้าต่างมื้อมือ ผ่านด้ายคู่ขนาน (Thread) ยอมให้โปรแกรมอื่นในคอมทำต่อ
+        # Start projecting structured light onto phone screen via Thread, keeping app responsive
         threading.Thread(target=self.sys.capture_calibration, args=(d, n), daemon=True).start()
 
     def do_calib_compute(self):
-        # ขั้นคำนวณ Calibrate ย่อย
+        # Sub-calibration calculation step
         initial = self.calib_capture_dir.get()
         if not os.path.exists(initial): initial = os.getcwd()
         
@@ -493,23 +616,28 @@ class ScannerGUI:
 
     def run_calib_analysis(self, in_dir, out_file):
         try:
-            # ดึงวิเคราะห์ Errors คืนค่า
+            self.sys_log(f"Analyzing {in_dir}...")
+            # Pull Error Analysis return values
             errors, available_poses = self.sys.analyze_calibration(in_dir)
-            # เด้งหน้าต่างให้คนตัดสินใจบน Thread หน้าจอหลัก (main thread)
+            # Pop up window for user decision on the main thread
             self.root.after(0, self.prompt_pose_selection, errors, available_poses, in_dir, out_file)
         except Exception as e:
             err_msg = str(e)
+            self.sys_log(f"Calib Analysis Error: {err_msg}")
             self.root.after(0, lambda: messagebox.showerror("Calib Error", err_msg))
 
     def prompt_pose_selection(self, errors, available_poses, in_dir, out_file):
-        # โชว์รั้งท้ายความคลาดเคลื่อน ถามว่าจะตัดรูปไหนทิ้งไหม 
+        # Show error limits, ask to discard any bad images? 
         msg = "Calibration Analysis (Error in px):\n\n"
         for pose, (ce, pe) in errors.items():
             msg += f"{pose}: Cam={ce:.2f}, Proj={pe:.2f}\n"
         msg += "\nEnter poses to KEEP (e.g., '1,3,4' OR 'all' for all):"
         
+        self.sys_log("Displayed pose selection prompt to user.")
         user_input = simpledialog.askstring("Select Poses", msg, parent=self.root)
-        if not user_input: return
+        if not user_input: 
+            self.sys_log("Pose selection cancelled.")
+            return
         
         selected_poses = []
         user_input = user_input.strip()
@@ -523,110 +651,179 @@ class ScannerGUI:
                 if idx.startswith("pose_"): name = idx
                 if name in available_poses: selected_poses.append(name)
         
-        # ปล่อยผีเดินหน้า Calibrate ตัวเมียต่อไป
+        self.sys_log(f"Selected poses: {', '.join(selected_poses)}")
+        self.sys_log("Starting final calibration calculation. This may take a minute...")
+        # Continue running the Calibration process
         threading.Thread(target=self.run_calib_final, args=(in_dir, selected_poses, out_file), daemon=True).start()
 
     def run_calib_final(self, in_dir, selected_poses, out_file):
         try:
             self.sys.calibrate_final(in_dir, selected_poses, out_file)
+            self.sys_log(f"Calibration successfully saved to {out_file}")
             self.root.after(0, lambda: messagebox.showinfo("Success", f"Calibration Saved to:\n{out_file}"))
-            self.root.after(0, lambda: self.calib_file.set(out_file)) # เซ็ตไฟล์ที่ได้ลงช่องให้เลย
+            self.root.after(0, lambda: self.calib_file.set(out_file)) # Set the selected file into the input field
         except Exception as e:
             err_msg = str(e)
+            self.sys_log(f"Calibration Final Error: {err_msg}")
             self.root.after(0, lambda: messagebox.showerror("Calib Final Error", err_msg))
 
     def do_scan_capture(self):
-        # สั่งกระโดดถ่ายภาพ Scan ถอดรหัสลายขวางลายตั้ง
+        # Command Scan capture decoding horizontal and vertical patterns
         base = os.path.join(DEFAULT_ROOT, "scans")
         name = self.scan_name.get()
         path = os.path.join(base, name)
         self.scan_capture_dir.set(path)
         
+        self.sys_log(f"Starting Scan Capture for target: {name}")
         threading.Thread(target=self.sys.capture_scan, args=(path,), daemon=True).start()
 
-    def select_calib_file(self):
-        initial = self.calib_file.get()
-        if not initial or not os.path.exists(os.path.dirname(initial)): initial = os.getcwd()
-        f = filedialog.askopenfilename(title="Select Calibration .mat", initialdir=os.path.dirname(initial), filetypes=[("MAT Files", "*.mat")])
-        if f: self.calib_file.set(f)
 
-    def do_cloud_gen(self):
-        # รันสร้างเมฆ Point Cloud
-        initial = self.scan_capture_dir.get()
-        if not os.path.exists(initial): initial = os.getcwd()
-        
-        scan_dir = filedialog.askdirectory(title="Select Scan Images Folder", initialdir=initial)
-        if not scan_dir: return
-        
-        calib_path = self.calib_file.get()
-        
-        threading.Thread(target=self.run_cloud_gen, args=(scan_dir, calib_path), daemon=True).start()
 
-    def run_cloud_gen(self, scan_dir, calib_path):
-        try:
-            self.sys.generate_cloud(scan_dir, calib_path)
-            self.root.after(0, lambda: messagebox.showinfo("Done", f"Cloud generation finished for\n{os.path.basename(scan_dir)}"))
-        except Exception as e:
-             err_msg = str(e)
-             self.root.after(0, lambda: messagebox.showerror("Error", err_msg))
+    def do_multi_pcp(self):
+        calib = self.mpcp_calib_file.get()
+        target = self.mpcp_input_path.get()
+        mode = self.mpcp_mode.get()
+        
+        if not calib or not target:
+            messagebox.showerror("Error", "Please select both a calibration file and an input folder.")
+            return
+            
+        if not os.path.exists(calib):
+            messagebox.showerror("Error", "Calibration file not found.")
+            return
+
+        self.btn_run_mpcp.config(state='disabled')
+        self.mpcp_log(f"=== Starting {mode.upper()} Processing ===")
+        
+        def run():
+            try:
+                self.processor.process_multi_ply(calib, target, mode, log_callback=self.mpcp_log)
+                self.root.after(0, lambda: messagebox.showinfo("Done", "Processing Completed!"))
+            except Exception as e:
+                self.mpcp_log(f"CRITICAL ERROR: {e}")
+                self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
+            finally:
+                self.root.after(0, lambda: self.btn_run_mpcp.config(state='normal'))
+                
+        threading.Thread(target=run, daemon=True).start()
 
     def do_batch_processing(self):
-        # รันหน้าสอง (Batch ลบทิ้งขยะ + พื้นหลัง)
+        # Run Tab 3 (Batch remove noise + background)
         in_dir = self.proc_input_dir.get()
         out_dir = self.proc_output_dir.get()
         
-        # BG Params
-        bg_dist = self.bg_dist_thresh.get()
-        bg_rn = self.bg_ransac_n.get()
-        bg_iters = self.bg_iterations.get()
-        
-        # Outlier Params
-        nb = self.proc_nb_neighbors.get()
-        std = self.proc_std_ratio.get()
-        
+        # Check if any folder path input fields are empty
         if not in_dir or not out_dir:
-            messagebox.showerror("Error", "Select both Input and Output folders.")
+            messagebox.showerror("Error", "Please select input and output folders.")
             return
-
-        if not os.path.exists(out_dir):
-            os.makedirs(out_dir)
-
-        ply_files = glob.glob(os.path.join(in_dir, "*.ply"))
-        if not ply_files:
-            messagebox.showerror("Error", "No .ply files found in input folder.")
+            
+        # Check that the user selects at least one cleaning process
+        if not any([self.enable_bg_removal.get(), self.enable_outlier_removal.get(), 
+                    self.enable_radius_outlier.get(), self.enable_cluster.get()]):
+            messagebox.showwarning("Warning", "Please select at least one cleaning process!")
             return
 
         def run():
-            count = 0
-            errors = 0
-            total = len(ply_files)
-            
-            for fpath in ply_files:
-                fname = os.path.basename(fpath)
-                out_path = os.path.join(out_dir, fname.replace(".ply", "_processed.ply"))
+            # Pull all point cloud files with .ply extension in the Source folder
+            import glob
+            ply_files = glob.glob(os.path.join(in_dir, "*.ply"))
+            if not ply_files:
+                self.root.after(0, lambda: messagebox.showerror("Error", "No .ply files found in input directory."))
+                return
                 
-                print(f"[Task] Processing {fname}...")
-                try:
-                    pcd = self.processor.remove_background(fpath, distance_threshold=bg_dist, ransac_n=bg_rn, num_iterations=bg_iters, return_obj=True)
-                    pcd = self.processor.remove_outliers(pcd, nb_neighbors=nb, std_ratio=std, return_obj=True)
-                    
-                    import open3d as o3d
-                    o3d.io.write_point_cloud(out_path, pcd)
-                    print(f"[Task] Saved {out_path}")
-                    count += 1
-                except Exception as e:
-                    print(f"[Task] Error processing {fname}: {e}")
-                    errors += 1
+            os.makedirs(out_dir, exist_ok=True)
             
-            msg = f"Pipeline Completed.\nProcessed: {count}/{total}\nErrors: {errors}\nSaved to: {out_dir}"
-            self.root.after(0, lambda: messagebox.showinfo("Processing Done", msg))
-        
+            # Assign task to batch process files sequentially in queue
+            for path in ply_files:
+                filename = os.path.basename(path)
+                final_output_path = os.path.join(out_dir, filename)
+                
+                # Store Point Cloud data to be processed (initially the original file)
+                current_data = path 
+                
+                # 📌 1. Intelligent Background Wall Reduction Process (Plane Segmentation)
+                if self.enable_bg_removal.get():
+                    bg_dist = self.bg_dist_thresh.get()
+                    bg_rn = self.bg_ransac_n.get()
+                    bg_iters = self.bg_iterations.get()
+                    try:
+                        current_data = self.processor.remove_background(
+                            input_data=current_data,
+                            output_path=None, # Save only at the end
+                            distance_threshold=bg_dist,
+                            ransac_n=bg_rn,
+                            num_iterations=bg_iters,
+                            return_obj=True # Must return the model to continue to the next step
+                        )
+                    except Exception as e:
+                        print(f"Error BG removal on {filename}: {e}")
+                        continue
+                        
+                # 📌 2. Keep Largest Cluster
+                if self.enable_cluster.get():
+                    eps = self.proc_cluster_eps.get()
+                    min_pts = self.proc_cluster_min.get()
+                    try:
+                        current_data = self.processor.keep_largest_cluster(
+                            input_data=current_data,
+                            output_path=None,
+                            eps=eps,
+                            min_points=min_pts,
+                            return_obj=True
+                        )
+                    except Exception as e:
+                         print(f"Error Largest Cluster on {filename}: {e}")
+                         continue
+
+                # 📌 3. Radius Outlier Removal
+                if self.enable_radius_outlier.get():
+                    nb = self.proc_radius_nb.get()
+                    rad = self.proc_radius_r.get()
+                    try:
+                         current_data = self.processor.remove_radius_outlier(
+                             input_data=current_data,
+                             output_path=None,
+                             nb_points=nb,
+                             radius=rad,
+                             return_obj=True
+                         )
+                    except Exception as e:
+                         print(f"Error Radius Outlier on {filename}: {e}")
+                         continue
+
+                # 📌 4. Statistical Outlier Removal Process
+                if self.enable_outlier_removal.get():
+                    nb = self.proc_nb_neighbors.get()
+                    sr = self.proc_std_ratio.get()
+                    try:
+                        current_data = self.processor.remove_outliers(
+                            input_data=current_data, 
+                            output_path=None, 
+                            nb_neighbors=nb, 
+                            std_ratio=sr,
+                            return_obj=True
+                        )
+                    except Exception as e:
+                        print(f"Error Outlier removal on {filename}: {e}")
+                        continue
+                
+                # If no Error and passes pipeline, save to file
+                if not isinstance(current_data, str): 
+                    import open3d as o3d
+                    o3d.io.write_point_cloud(final_output_path, current_data)
+                    print(f"[Done] Saved to {final_output_path}")
+                else:
+                    import shutil
+                    shutil.copy(path, final_output_path)
+                    print(f"[Copied] Saved untouched to {final_output_path}")
+                        
+            # Pop up clear notification when all tasks finish at once 
+            self.root.after(0, lambda: messagebox.showinfo("Done", "Batch processing finished!"))
+            
         threading.Thread(target=run, daemon=True).start()
 
     def do_merge_360(self):
-        # รันหน้าสาม ต่อโมเดล 360 ดริกิ๊
-        in_dir = self.merge_input_dir.get()
-        out_file = self.merge_output_file.get()
+        # Run Tab 3 merge 360 model
         vx = self.merge_voxel.get()
         
         if not in_dir or not out_file:
@@ -645,7 +842,7 @@ class ScannerGUI:
         threading.Thread(target=run, daemon=True).start()
 
     def do_360_meshing(self):
-        # รันหน้า 4 โบท็อกซ์ Mesh ปกติ 
+        # Run Tab 4 Normal Mesh 
         i = self.m360_input_ply.get()
         o = self.m360_output_stl.get()
         d = self.m360_depth.get()
@@ -666,7 +863,7 @@ class ScannerGUI:
         threading.Thread(target=run, daemon=True).start()
 
     def do_stl_recon(self):
-        # รันหน้า 6 ประชันงานธรรมดาไม่ต่อพ่วง
+        # Run Tab 6 basic operations
         i = self.s_input_ply.get()
         o = self.s_output_stl.get()
         m = self.s_mode.get()
@@ -688,11 +885,11 @@ class ScannerGUI:
         threading.Thread(target=run, daemon=True).start()
 
     def do_auto_scan_sequence(self):
-        # รันหน้า 5 (พระเอก) เปิดศึกมุดรอบก้านหมุน Turntable ออโต้สแกน 
+        # Run Tab 5 Turntable auto-scan 
         
-        # ตรวจสอบการพึ่งพา Arduino
+        # Check Arduino dependency
         if not self.arduino.ser:
-            # ถ้าไม่มีกลมืน ถามว่าตะลุยต่อลักไก่เล่นๆ (Simulation) ไหม
+            # If Arduino is not connected, ask if want to continue in Simulation mode
             if not messagebox.askyesno("Confirm", "Arduino not connected (in software). Continue anyway (Simulation)?"):
                 return
         
@@ -704,11 +901,11 @@ class ScannerGUI:
         if not base_name or not root_dir:
             messagebox.showerror("Error", "Check Output settings"); return
             
-        # Create Main Folder (โฟลเดอร์รันชิ้นงาน 360 สำหรับหอบใหญ่นี้)
+        # Create Main Folder (Run folder for 360 object)
         main_folder = os.path.join(root_dir, f"{base_name}_{int(deg)}deg_AUTO")
         os.makedirs(main_folder, exist_ok=True)
         
-        # ฟลอร์เต็นท์ใหม่ Popup Progress (หน้าต่างรอง แจ้งคืวความก้าวหน้าระหว่างรัน)
+        # New Popup Progress (Secondary window to notify progress during run)
         top = tk.Toplevel(self.root)
         top.title("Auto Scan Progress")
         top.geometry("400x300")
@@ -722,12 +919,12 @@ class ScannerGUI:
         pb = ttk.Progressbar(top, maximum=turns, mode='determinate')
         pb.pack(fill=tk.X, padx=20, pady=20)
         
-        # Thread Logic ขบวนการออโต้ไล่ฟัน
+        # Thread Logic Auto process execution
         def run_thread():
             start_time = time.time()
             
-            for i in range(turns): # วิ่งรอบกี่ปืนโตตามรอบ (turns)
-                # Update UI (อัปเดตสภาพบนหน้าจอ UI ที่มีโชว์)
+            for i in range(turns): # How many turns to cycle through
+                # Update UI (Update UI state displayed on screen)
                 elapsed = time.time() - start_time
                 avg_time = (elapsed / i) if i > 0 else 0
                 rem_time = avg_time * (turns - i)
@@ -738,41 +935,41 @@ class ScannerGUI:
                 self.root.after(0, lambda: lbl_time.config(text=f"Time: {int(elapsed)}s"))
                 self.root.after(0, lambda m=i: pb.config(value=m))
                 
-                # 1. CAPTURE ถ่ายรูปรัวๆ
+                # 1. CAPTURE Take burst photos
                 current_angle = i * deg
-                sub_name = f"{base_name}_{int(current_angle)}deg_scan" # ชื่อย่อยท่าทาง
+                sub_name = f"{base_name}_{int(current_angle)}deg_scan" # Pose sub-name
                 sub_path = os.path.join(main_folder, sub_name)
                 
                 print(f"[Auto] Capturing to {sub_path}")
                 
                 try:
-                    # ป้อนคำสั่งลับ silent=True คือระเว้นการจ้อหน้าจอโชว์เตือนใดๆทั้งปวง ระหว่างสาดแสง ให้มันไม่ติดขัด
+                    # Input hidden command silent=True to skip popup alerts during projection, keeping it smooth
                     self.sys.capture_scan(sub_path, silent=True)
                 except Exception as e:
                     print(f"Scan Error: {e}")
                     self.root.after(0, lambda: messagebox.showerror("Error", f"Scan failed: {e}"))
                     return
 
-                # 2. MOVE หมุนแท่นเต้นรำไปเตรียมรับดาบต่อไป
-                if i < turns - 1: # ถ้ายังไม่ถึงรอบสุดท้ายก็สั่งมอเตอร์วิ่ง
+                # 2. MOVE rotate the turntable to prepare for the next shot
+                if i < turns - 1: # If not the final loop, command motor to move
                     msg_move = f"Rotating {deg} degrees..."
                     self.root.after(0, lambda: lbl_info.config(text=msg_move))
                     
                     if self.arduino.ser:
                         self.arduino.rotate(deg)
-                        # เฝ้ารอคำว่า DONE จาก Arduino โดยให้เวทีเวลา 10 วิ ถ้าโต้ตอบไม่ทันแสดงว่าแท่นอาจฝืดหรือไม่รัน
+                        # Wait for 'DONE' from Arduino with a 10s timeout, otherwise turntable might be stuck
                         done = self.arduino.wait_for_done(timeout=10) 
                         if not done:
                             print("Warning: Arduino move timeout or no DONE received.")
-                        time.sleep(0.5) # พักหน่วงนึดนึงกันการสั่นสะเทือนชิ้นงาน
+                        time.sleep(0.5) # Pause slightly to prevent object vibration
                     else:
-                        time.sleep(2) # ซิมูลล่าเล่นๆไปพลางๆตอนเทสคอม
+                        time.sleep(2) # Running simulation as a side test
 
-            # Finish (รวบตึง)
+            # Finish (Wrap up)
             total_time = time.time() - start_time
             done_msg = f"Auto Scan Complete!\nTotal Time: {int(total_time)}s\nLocation: {main_folder}"
             self.root.after(0, lambda: messagebox.showinfo("Done", done_msg))
-            self.root.after(0, top.destroy) # ยกทัพปิดหน้าจอ ProgressBar
+            self.root.after(0, top.destroy) # Close the ProgressBar window
 
         threading.Thread(target=run_thread, daemon=True).start()
 
